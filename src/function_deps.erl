@@ -1,9 +1,9 @@
 -module(function_deps).
 
--export([get/2]).
+-export([get/3]).
 
--spec 'get'(atom(), string()) -> [{atom(), atom()}].
-'get'(Module, Function) ->
+-spec 'get'(atom(), string(), non_neg_integer()) -> [{atom(), atom()}].
+'get'(Module, Function, Arity) ->
   ErlPath = atom_to_list(Module) ++ ".erl",
   BeamPath = outdir(Module) ++ "/" ++  atom_to_list(Module) ++ ".beam",
 
@@ -16,8 +16,9 @@
       (Zipper) ->
         case zipper:node(Zipper) of
           #{type := function,
-            attrs := #{name := FunName}} ->
-            FunName == Function;
+            attrs := #{name := FunName,
+                       arity := FunArity}} ->
+            FunName == Function andalso FunArity == Arity;
           _ ->
             false
         end
@@ -30,25 +31,41 @@
       FunCallPred =
         fun
           (Zipper) ->
-                       case zipper:node(Zipper) of
-                         #{type := call} -> true;
-                         _ -> false
-                       end
-                   end,
-  Calls = find_zipper(FunCallPred, FunctionNode),
-  lists:map(fun module_function/1, Calls)
-end.
+            case zipper:node(Zipper) of
+              #{type := call} -> true;
+              _ -> false
+            end
+        end,
+      Calls = find_zipper(FunCallPred, FunctionNode),
+      lists:map(fun module_function/1, Calls)
+  end.
 
 module_function(#{type := call,
                   attrs := #{function := Function}}) ->
   module_function(Function);
-module_function(#{type := atom,
-                  attrs := #{value := Name}}) ->
-  Name;
 module_function(#{type := remote,
                   attrs := #{function := #{attrs := #{value := Function}},
                              module := #{attrs := #{value := Module}}}}) ->
-  {Module, Function}.
+  {Module, Function};
+module_function(#{type := remote,
+                  attrs := #{function := #{attrs := #{value := Function}},
+                             module := #{attrs := #{name := Module}}}}) ->
+  {Module, Function};
+module_function(#{type := remote,
+                  attrs := #{function := #{attrs := #{name := Function}},
+                             module := #{attrs := #{name := Module}}}}) ->
+  {Module, Function};
+module_function(#{type := remote,
+                  attrs := #{function := #{attrs := #{name := Function}},
+                             module := #{attrs := #{value := Module}}}}) ->
+  {Module, Function};
+module_function(#{type := atom,
+                  attrs := #{value := Name}}) ->
+  Name;
+module_function(#{type := var,
+                  attrs := #{name := Name}}) ->
+  Name.
+
 
 outdir(Module) ->
   ModuleInfo = Module:module_info(),
@@ -62,13 +79,13 @@ outdir(Module) ->
 find_zipper(Pred, Root) ->
   IsBranch = fun
                (#{content := [_ | _]}) -> true;
-    (_) -> false
-                        end,
-Children = fun (#{content := Content}) -> Content end,
-MakeNode = fun(Node, _) -> Node end,
-Zipper = zipper:new(IsBranch, Children, MakeNode, Root),
-Results = find_zipper(Pred, Zipper, []),
-lists:reverse(Results).
+               (_) -> false
+             end,
+  Children = fun (#{content := Content}) -> Content end,
+  MakeNode = fun(Node, _) -> Node end,
+  Zipper = zipper:new(IsBranch, Children, MakeNode, Root),
+  Results = find_zipper(Pred, Zipper, []),
+  lists:reverse(Results).
 
 find_zipper(Pred, Zipper, Results) ->
   case zipper:is_end(Zipper) of
