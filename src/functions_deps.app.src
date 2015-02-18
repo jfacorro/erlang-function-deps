@@ -1,0 +1,10 @@
+{
+  application, functions_deps,
+  [
+   {description, "Functions deps"},
+   {vsn, "0.0.1"},
+   {applications, [kernel, stdlib, lager, zipper, katana]},
+   {modules, []},
+   {registered, []}
+  ]
+}.
